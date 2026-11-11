@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   build:
@@ -22,20 +23,27 @@ jobs:
       - run: HOMEBREW_DISABLE_LOAD_FORMULA=1 brew update
       - run: brew install swiftly
       - run: swiftly init --skip-install --assume-yes --verbose && swiftly install
-      - run: ./build-debug.sh
+      - name: Restore verified exact-head binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download 43006084211 --repo morhaf-ko/AeroSpace --name helium-live-validation-3c34eab --dir .previous-validation
+          (cd .previous-validation && shasum -a 256 -c helium-live-validation.tar.gz.sha256)
+          mkdir .live-validation
+          tar -xzf .previous-validation/helium-live-validation.tar.gz -C .live-validation
+          test "$(cat .live-validation/SOURCE_COMMIT)" = 3c34eab80e65e1a1302bebe851be46a45d1c7abf
       - name: Package exact-head debug binaries
         run: |
-          mkdir .live-validation
-          cp .debug/AeroSpaceApp .debug/aerospace .live-validation/
-          git rev-parse HEAD > .live-validation/SOURCE_COMMIT
+          swift_lib_dir="$(swiftly run swiftc -print-target-info | python3 -c 'import json,sys,pathlib; print(pathlib.Path(json.load(sys.stdin)["paths"]["runtimeResourcePath"]).parent)')"
+          cp "$swift_lib_dir/swift-6.2/macosx/libswiftCompatibilitySpan.dylib" .live-validation/
           swiftly run swift --version > .live-validation/TOOLCHAIN.txt
-          file .live-validation/AeroSpaceApp .live-validation/aerospace
-          (cd .live-validation && shasum -a 256 AeroSpaceApp aerospace > SHA256SUMS)
+          file .live-validation/AeroSpaceApp .live-validation/aerospace .live-validation/libswiftCompatibilitySpan.dylib
+          (cd .live-validation && shasum -a 256 AeroSpaceApp aerospace libswiftCompatibilitySpan.dylib > SHA256SUMS)
           tar -czf helium-live-validation.tar.gz -C .live-validation .
           shasum -a 256 helium-live-validation.tar.gz > helium-live-validation.tar.gz.sha256
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: helium-live-validation-3c34eab
+          name: helium-live-validation-bundle-3c34eab
           path: |
             helium-live-validation.tar.gz
             helium-live-validation.tar.gz.sha256

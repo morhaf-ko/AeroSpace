@@ -1,0 +1,43 @@
+name: Helium live-validation artifact
+
+on:
+  push:
+    branches: ['validation/helium-live']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: 3c34eab80e65e1a1302bebe851be46a45d1c7abf
+          persist-credentials: false
+      - run: test "$(git rev-parse HEAD)" = 3c34eab80e65e1a1302bebe851be46a45d1c7abf
+      - run: ./.github/gh-actions-runner-xcode-select.sh
+      - run: brew install bash
+      - run: HOMEBREW_DISABLE_LOAD_FORMULA=1 brew update
+      - run: brew install swiftly
+      - run: swiftly init --skip-install --assume-yes --verbose && swiftly install
+      - run: ./build-debug.sh
+      - name: Package exact-head debug binaries
+        run: |
+          mkdir .live-validation
+          cp .debug/AeroSpaceApp .debug/aerospace .live-validation/
+          git rev-parse HEAD > .live-validation/SOURCE_COMMIT
+          swiftly run swift --version > .live-validation/TOOLCHAIN.txt
+          file .live-validation/AeroSpaceApp .live-validation/aerospace
+          (cd .live-validation && shasum -a 256 AeroSpaceApp aerospace > SHA256SUMS)
+          tar -czf helium-live-validation.tar.gz -C .live-validation .
+          shasum -a 256 helium-live-validation.tar.gz > helium-live-validation.tar.gz.sha256
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: helium-live-validation-3c34eab
+          path: |
+            helium-live-validation.tar.gz
+            helium-live-validation.tar.gz.sha256
+          retention-days: 1
+          if-no-files-found: error
